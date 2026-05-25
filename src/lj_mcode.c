@@ -85,7 +85,7 @@ static LJ_NORET LJ_NOINLINE void mcode_protfail(jit_State *J)
 
 static void *mcode_alloc_at(uintptr_t hint, size_t sz, DWORD prot)
 {
-  return LJ_WIN_VALLOC((void *)hint, sz,
+  return LJ_WIN_VALLOC_CODE((void *)hint, sz,
 		       MEM_RESERVE|MEM_COMMIT|MEM_TOP_DOWN, prot);
 }
 
@@ -104,6 +104,24 @@ static void mcode_setprot(jit_State *J, void *p, size_t sz, DWORD prot)
   UNUSED(J); UNUSED(p); UNUSED(sz); UNUSED(prot);
 #endif
 }
+
+#ifndef LJ_WIN_VALLOC_CODE
+/* See https://github.com/MicrosoftDocs/feedback/issues/1129 about pragma. */
+#pragma comment(lib, "mincore")
+void *LJ_WIN_VALLOC_CODE(void *hint, size_t sz, unsigned atype, unsigned prot)
+{
+  MEM_EXTENDED_PARAMETER ext[1] = {0};
+  void *p;
+  ext[0].Type = MemExtendedParameterAttributeFlags;
+  ext[0].ULong64 = MEM_EXTENDED_PARAMETER_EC_CODE;
+  p = LJ_WIN_VALLOC2(NULL, hint, sz, atype, PAGE_EXECUTE_READ, ext, 1);
+  if (p && prot != PAGE_EXECUTE_READ) {
+    VirtualFree(p, 0, MEM_RELEASE);
+    p = NULL;
+  }
+  return p;
+}
+#endif
 
 #elif LJ_TARGET_POSIX
 
